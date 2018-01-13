@@ -1,44 +1,7 @@
 import numpy as np
+import copy
 from math import sqrt
 from deeplearning.activation_fct import sigmoid, relu, relu_backward, sigmoid_backward
-
-
-def initialize_parameters(n_x, n_h, n_y, cst_weight_normalization=None):
-    """
-    Argument:
-    n_x -- size of the input layer
-    n_h -- size of the hidden layer
-    n_y -- size of the output layer
-
-    Returns:
-    parameters -- python dictionary containing your parameters:
-                    W1 -- weight matrix of shape (n_h, n_x)
-                    b1 -- bias vector of shape (n_h, 1)
-                    W2 -- weight matrix of shape (n_y, n_h)
-                    b2 -- bias vector of shape (n_y, 1)
-    """
-
-    np.random.seed(1)
-    if cst_weight_normalization:
-        W1 = np.random.randn(n_h, n_x) * cst_weight_normalization
-        W2 = np.random.randn(n_y, n_h) * cst_weight_normalization
-    else:
-        W1 = np.random.randn(n_h, n_x) * sqrt(2./n_x)
-        W2 = np.random.randn(n_y, n_h) * sqrt(2./n_h)
-    b1 = np.zeros((n_h, 1))
-    b2 = np.zeros((n_y, 1))
-
-    assert (W1.shape == (n_h, n_x))
-    assert (b1.shape == (n_h, 1))
-    assert (W2.shape == (n_y, n_h))
-    assert (b2.shape == (n_y, 1))
-
-    parameters = {"W1": W1,
-                  "b1": b1,
-                  "W2": W2,
-                  "b2": b2}
-
-    return parameters
 
 
 def initialize_parameters_deep(layer_dims, cst_weight_normalization=None):
@@ -84,10 +47,8 @@ def linear_forward(A, W, b):
     """
 
     Z = np.dot(W, A) + b
-
     assert (Z.shape == (W.shape[0], A.shape[1]))
     cache = (A, W, b)
-
     return Z, cache
 
 
@@ -157,7 +118,7 @@ def L_model_forward(X, parameters):
 
 # GRADED FUNCTION: compute_cost
 
-def compute_cost(AL, Y):
+def compute_cost(AL, Y, all_param=None, lambda_reg=0):
     """
     Implement the cost function defined by equation (7).
 
@@ -171,12 +132,20 @@ def compute_cost(AL, Y):
     m = Y.shape[1]
     # Compute loss from aL and y.
     cost = -np.sum(Y * np.log(AL) + (1. - Y) * np.log(1. - AL)) / m
-    cost = np.squeeze(cost)  # To make sure your cost's shape is what we expect (e.g. this turns [[17]] into 17).
+
+    regularization_cost = 0.
+    if lambda_reg:
+        assert all_param
+        L = len(all_param) // 2
+        regularization_cost = sum([np.squeeze(np.sum(np.square(all_param['W' + str(l+1)]))) for l in range(L)])/(2*m)
+
+    # To make sure your cost's shape is what we expect (e.g. this turns [[17]] into 17).
+    cost = np.squeeze(cost + lambda_reg * regularization_cost)
     assert (cost.shape == ())
     return cost
 
 
-def linear_backward(dZ, cache):
+def linear_backward(dZ, cache, lambda_reg=0):
     """
     Implement the linear portion of backward propagation for a single layer (layer l)
 
@@ -191,8 +160,9 @@ def linear_backward(dZ, cache):
     """
     A_prev, W, b = cache
     m = A_prev.shape[1]
-
     dW = np.dot(dZ, A_prev.T) / m
+    if lambda_reg:
+        dW = dW + lambda_reg / m * W
     db = np.sum(dZ, axis=1, keepdims=True) / m
     dA_prev = np.dot(W.T, dZ)
 
@@ -202,7 +172,7 @@ def linear_backward(dZ, cache):
     return dA_prev, dW, db
 
 
-def linear_activation_backward(dA, cache, activation):
+def linear_activation_backward(dA, cache, activation, lambda_reg=0):
     """
     Implement the backward propagation for the LINEAR->ACTIVATION layer.
 
@@ -224,11 +194,11 @@ def linear_activation_backward(dA, cache, activation):
     elif activation == "sigmoid":
         dZ = sigmoid_backward(dA, activation_cache)
 
-    dA_prev, dW, db = linear_backward(dZ, linear_cache)
+    dA_prev, dW, db = linear_backward(dZ, linear_cache, lambda_reg)
     return dA_prev, dW, db
 
 
-def L_model_backward(AL, Y, caches):
+def L_model_backward(AL, Y, caches, lambda_reg=0):
     """
     Implement the backward propagation for the [LINEAR->RELU] * (L-1) -> LINEAR -> SIGMOID group
 
@@ -256,13 +226,14 @@ def L_model_backward(AL, Y, caches):
     # Lth layer (SIGMOID -> LINEAR) gradients. Inputs: "AL, Y, caches". Outputs: "grads["dAL"], grads["dWL"], grads["dbL"]
     current_cache = caches[L - 1]
     grads["dA" + str(L)], grads["dW" + str(L)], grads["db" + str(L)] = linear_activation_backward(dAL, current_cache,
-                                                                                                  "sigmoid")
+                                                                                                  "sigmoid", lambda_reg)
 
     for l in reversed(range(L - 1)):
         # lth layer: (RELU -> LINEAR) gradients.
         # Inputs: "grads["dA" + str(l + 2)], caches". Outputs: "grads["dA" + str(l + 1)] , grads["dW" + str(l + 1)] , grads["db" + str(l + 1)]
         current_cache = caches[l]
-        dA_prev_temp, dW_temp, db_temp = linear_activation_backward(grads["dA" + str(l + 2)], current_cache, "relu")
+        dA_prev_temp, dW_temp, db_temp = linear_activation_backward(grads["dA" + str(l + 2)], current_cache, "relu",
+                                                                    lambda_reg)
         grads["dA" + str(l + 1)] = dA_prev_temp
         grads["dW" + str(l + 1)] = dW_temp
         grads["db" + str(l + 1)] = db_temp
@@ -288,12 +259,12 @@ def update_parameters(parameters, grads, learning_rate):
 
     # Update rule for each parameter. Use a for loop.
     for l in range(L):
-        parameters['W' + str(l + 1)] -= learning_rate * grads['dW' + str(l + 1)]
-        parameters['b' + str(l + 1)] -= learning_rate * grads['db' + str(l + 1)]
+        parameters['W' + str(l + 1)] = parameters['W' + str(l + 1)] - learning_rate * grads['dW' + str(l + 1)]
+        parameters['b' + str(l + 1)] = parameters['b' + str(l + 1)] - learning_rate * grads['db' + str(l + 1)]
     return parameters
 
 
-def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000, print_cost=False):  # lr was 0.009
+def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000, lambda_reg=0, print_cost=False):  # lr was 0.009
     """
     Implements a L-layer neural network: [LINEAR->RELU]*(L-1)->LINEAR->SIGMOID.
 
@@ -317,10 +288,15 @@ def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000,
         AL, caches = L_model_forward(X, parameters)
 
         # Compute cost.
-        cost = compute_cost(AL, Y)
+        cost = compute_cost(AL, Y, parameters, lambda_reg)
+
+        # copied_parameters = copy.deepcopy(parameters)
+        # AL2, caches2 = L_model_forward(X, parameters)
+        # cost2 = compute_cost(AL, Y, parameters, lambda_reg)
+        # print(i, cost, cost2)
 
         # Backward propagation.
-        grads = L_model_backward(AL, Y, caches)
+        grads = L_model_backward(AL, Y, caches, lambda_reg)
 
         # Update parameters.
         parameters = update_parameters(parameters, grads, learning_rate)
@@ -328,6 +304,7 @@ def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000,
         # Print the cost every 100 training example
         if print_cost and i % 1000 == 0:
             print("Cost after iteration %i: %f" % (i, cost))
+            gradient_check(parameters, grads, X, Y, 0.000001, lambda_reg)
             # for key in sorted(parameters.keys(), key=lambda x: x[::-1]):
             #     print(key, parameters[key])
         if print_cost and i % 1000 == 0:
@@ -341,6 +318,61 @@ def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000,
     # plt.show()
 
     return parameters
+
+
+def gradient_check(parameters, gradients, X, Y, epsilon=1e-7, lambda_reg=0):
+    """
+    Checks if backward_propagation_n computes correctly the gradient of the cost output by forward_propagation_n
+
+    Arguments:
+    parameters -- python dictionary containing your parameters "W1", "b1", "W2", "b2", "W3", "b3":
+    grad -- output of backward_propagation_n, contains gradients of the cost with respect to the parameters.
+    x -- input datapoint, of shape (input size, 1)
+    y -- true "label"
+    epsilon -- tiny shift to the input to compute approximated gradient with formula(1)
+
+    Returns:
+    difference -- difference (2) between the approximated gradient and the backward propagation gradient
+    """
+
+    copied_parameters = copy.deepcopy(parameters)
+
+    g1, g2, keys = list(), list(), list()
+    for key, param in copied_parameters.items():
+        if key[0] in ('W', 'b'):
+            assert 'd' + key in gradients.keys()
+            keys.append(key)
+            for i in range(param.shape[0]):
+                for j in range(param.shape[1]):
+
+                    copied_parameters[key][i, j] = parameters[key][i, j] + epsilon
+                    AL, _ = L_model_forward(X, copied_parameters)
+                    J_p = compute_cost(AL, Y, copied_parameters, lambda_reg)
+                    copied_parameters[key][i, j] = parameters[key][i, j] - epsilon
+                    AL, _ = L_model_forward(X, copied_parameters)
+                    J_m = compute_cost(AL, Y, copied_parameters, lambda_reg)
+                    copied_parameters[key][i, j] = parameters[key][i, j]
+                    estimated_dJ = (J_p - J_m) / (2.*epsilon)
+
+                    g1.append(gradients['d' + key][i, j])
+                    g2.append(estimated_dJ)
+
+    g1 = np.array(g1)
+    g2 = np.array(g2)
+
+    # Compare gradapprox to backward propagation gradients by computing difference.
+    numerator = np.linalg.norm(g1 - g2)
+    denominator = np.linalg.norm(g1) + np.linalg.norm(g2)
+    difference = numerator / denominator
+
+    if difference > 2e-7:
+        print(
+            "\033[93m" + "There is a mistake in the backward propagation! difference = " + str(difference) + "\033[0m")
+    else:
+        print(
+            "\033[92m" + "Your backward propagation works perfectly fine! difference = " + str(difference) + "\033[0m")
+
+    return difference
 
 
 

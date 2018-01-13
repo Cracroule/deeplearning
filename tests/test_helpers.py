@@ -1,22 +1,8 @@
 import numpy as np
 from tests.utils import assert_content_equality
-from deeplearning.helpers import initialize_parameters, initialize_parameters_deep, linear_forward, \
+from deeplearning.helpers import initialize_parameters_deep, linear_forward, \
     linear_activation_forward, compute_cost, linear_backward, linear_activation_backward, L_model_forward, \
     L_model_backward, update_parameters
-
-
-# test assumes involved seed is 1 (it s now actually set in the initialize parameters function
-# might be useful to reset random generator at the begining of the test
-def test_initialize_parameters():
-    parameters = initialize_parameters(3, 2, 1, cst_weight_normalization=0.01)
-    W1 = [[0.01624345, -0.00611756, -0.00528172], [-0.01072969, 0.00865408, -0.02301539]]
-    b1 = [[0.], [0.]]
-    W2 = [[0.01744812, -0.00761207]]
-    b2 = [[0.]]
-    assert_content_equality(parameters["W1"], W1)
-    assert_content_equality(parameters["b1"], b1)
-    assert_content_equality(parameters["W2"], W2)
-    assert_content_equality(parameters["b2"], b2)
 
 
 def test_initialize_parameters_deep():

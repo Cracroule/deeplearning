@@ -6,7 +6,8 @@ from deeplearning.helpers import L_layer_model, L_model_forward
 import numpy as np
 import matplotlib
 
-X, y = sklearn.datasets.make_moons(2000, noise=0.20)
+np.random.seed(1)
+X, y = sklearn.datasets.make_moons(400, noise=0.20)
 plt.scatter(X[:,0], X[:,1], s=40, c=y, cmap=plt.cm.Spectral)
 
 # Train the logistic rgeression classifier
@@ -23,8 +24,8 @@ X_test = X[train_size:, :]
 y_test = y[train_size:]
 
 # hyperparameters choices
-nb_of_hidden_layouts = 5
-nb_of_units_per_hidden_layouts = 10
+nb_of_hidden_layouts = 2
+nb_of_units_per_hidden_layouts = 8
 
 hidden_lay_dims = [nb_of_units_per_hidden_layouts] * nb_of_hidden_layouts
 layers_dims = (X_train.shape[1], *hidden_lay_dims, 1)
@@ -49,7 +50,7 @@ print('Y_test shape', Y_test.shape)
 # plt.show()
 
 
-opti_params = L_layer_model(X_train, Y_train, layers_dims, print_cost=True)
+opti_params = L_layer_model(X_train, Y_train, layers_dims, num_iterations=30000, lambda_reg=0.4, print_cost=True)
 
 y_train_hat, cache = L_model_forward(X_train, opti_params)
 y_test_hat, cache = L_model_forward(X_test, opti_params)

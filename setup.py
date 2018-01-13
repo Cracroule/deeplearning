@@ -10,6 +10,6 @@ setup(
     license='rpil',
     package_dir={},
     packages=['ml'],
-    scripts=['scripts/example.py'],
+    scripts=['scripts/make_moons.py'],
     install_requires=[]
 )
