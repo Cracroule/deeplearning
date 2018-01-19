@@ -50,7 +50,8 @@ print('Y_test shape', Y_test.shape)
 # plt.show()
 
 
-opti_params = L_layer_model(X_train, Y_train, layers_dims, num_iterations=30000, lambda_reg=0.4, print_cost=True)
+opti_params = L_layer_model(X_train, Y_train, layers_dims, learning_rate=0.01, num_iterations=30000, lambda_reg=0.4,
+                            print_cost=True)
 
 y_train_hat, cache = L_model_forward(X_train, opti_params)
 y_test_hat, cache = L_model_forward(X_test, opti_params)

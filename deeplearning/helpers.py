@@ -1,7 +1,28 @@
 import numpy as np
 import copy
 from math import sqrt
-from deeplearning.activation_fct import sigmoid, relu, relu_backward, sigmoid_backward
+from deeplearning.activation_fct import sigmoid, relu, relu_backward, sigmoid_backward, tanh_backward, tanh
+
+
+def normalize_input(input, mean=None, variance=None):
+    """
+    Arguments:
+    param input -- np.array with data, input.shape = [n, m] where m size of the sample, n nb of features
+    param mean -- default=None. If filled, it is used to standardize the input (no mean computation)
+    param variance -- default=None. If filled, it is used to standardize the input (no var computation)
+
+    return:
+
+    """
+    input_mean, input_var = mean, variance
+    if not input_mean:
+        input_mean = np.mean(input, axis=1, keepdims=True)
+    if not input_var:
+        input_var = np.var(input, axis=1, keepdims=True)
+
+    zero_mean_input = input - input_mean
+    standardized_input = np.divide(zero_mean_input, input_var)
+    return standardized_input, input_mean, input_var
 
 
 def initialize_parameters_deep(layer_dims, cst_weight_normalization=None):
@@ -68,15 +89,17 @@ def linear_activation_forward(A_prev, W, b, activation):
              stored for computing the backward pass efficiently
     """
 
+    # Inputs: "A_prev, W, b". Outputs: "A, activation_cache".
+    Z, linear_cache = linear_forward(A_prev, W, b)
     if activation == "sigmoid":
-        # Inputs: "A_prev, W, b". Outputs: "A, activation_cache".
-        Z, linear_cache = linear_forward(A_prev, W, b)
         A, activation_cache = sigmoid(Z), Z  # trick here, activation cache is Z
 
     elif activation == "relu":
-        # Inputs: "A_prev, W, b". Outputs: "A, activation_cache".
-        Z, linear_cache = linear_forward(A_prev, W, b)
         A, activation_cache = relu(Z), Z  # trick here, activation cache is Z
+
+    elif activation == "tanh":
+        A, activation_cache = tanh(Z), Z  # trick here, activation cache is Z
+
     assert (A.shape == (W.shape[0], A_prev.shape[1]))
     cache = (linear_cache, activation_cache)
     return A, cache
@@ -104,6 +127,7 @@ def L_model_forward(X, parameters):
     # Implement [LINEAR -> RELU]*(L-1). Add "cache" to the "caches" list.
     for l in range(1, L):
         A_prev = A
+        # A, cache = linear_activation_forward(A_prev, parameters['W' + str(l)], parameters['b' + str(l)], 'tanh')
         A, cache = linear_activation_forward(A_prev, parameters['W' + str(l)], parameters['b' + str(l)], 'relu')
         caches.append(cache)
 
@@ -194,6 +218,9 @@ def linear_activation_backward(dA, cache, activation, lambda_reg=0):
     elif activation == "sigmoid":
         dZ = sigmoid_backward(dA, activation_cache)
 
+    elif activation == "tanh":
+        dZ = tanh_backward(dA, activation_cache)
+
     dA_prev, dW, db = linear_backward(dZ, linear_cache, lambda_reg)
     return dA_prev, dW, db
 
@@ -233,7 +260,9 @@ def L_model_backward(AL, Y, caches, lambda_reg=0):
         # Inputs: "grads["dA" + str(l + 2)], caches". Outputs: "grads["dA" + str(l + 1)] , grads["dW" + str(l + 1)] , grads["db" + str(l + 1)]
         current_cache = caches[l]
         dA_prev_temp, dW_temp, db_temp = linear_activation_backward(grads["dA" + str(l + 2)], current_cache, "relu",
-                                                                    lambda_reg)
+                                                                     lambda_reg)
+        # dA_prev_temp, dW_temp, db_temp = linear_activation_backward(grads["dA" + str(l + 2)], current_cache, "tanh",
+        #                                                            lambda_reg)
         grads["dA" + str(l + 1)] = dA_prev_temp
         grads["dW" + str(l + 1)] = dW_temp
         grads["db" + str(l + 1)] = db_temp
@@ -264,7 +293,8 @@ def update_parameters(parameters, grads, learning_rate):
     return parameters
 
 
-def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000, lambda_reg=0, print_cost=False):  # lr was 0.009
+def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000, lambda_reg=0, print_cost=False,
+                  grad_check=False):
     """
     Implements a L-layer neural network: [LINEAR->RELU]*(L-1)->LINEAR->SIGMOID.
 
@@ -272,13 +302,15 @@ def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000,
     X -- data, numpy array of shape (number of examples, num_px * num_px * 3)
     Y -- true "label" vector (containing 0 if cat, 1 if non-cat), of shape (1, number of examples)
     layers_dims -- list containing the input size and each layer size, of length (number of layers + 1).
-    learning_rate -- learning rate of the gradient descent update rule
+    learning_rate -- initial learning rate of the gradient descent update rule
     num_iterations -- number of iterations of the optimization loop
     print_cost -- if True, it prints the cost every 100 steps
 
     Returns:
     parameters -- parameters learnt by the model. They can then be used to predict.
     """
+    learning_rate_factor = 0
+
     costs = []  # keep track of cost
     # Parameters initialization.
     parameters = initialize_parameters_deep(layers_dims)
@@ -290,25 +322,19 @@ def L_layer_model(X, Y, layers_dims, learning_rate=0.0075, num_iterations=10000,
         # Compute cost.
         cost = compute_cost(AL, Y, parameters, lambda_reg)
 
-        # copied_parameters = copy.deepcopy(parameters)
-        # AL2, caches2 = L_model_forward(X, parameters)
-        # cost2 = compute_cost(AL, Y, parameters, lambda_reg)
-        # print(i, cost, cost2)
-
         # Backward propagation.
         grads = L_model_backward(AL, Y, caches, lambda_reg)
 
-        # Update parameters.
-        parameters = update_parameters(parameters, grads, learning_rate)
-
-        # Print the cost every 100 training example
         if print_cost and i % 1000 == 0:
             print("Cost after iteration %i: %f" % (i, cost))
-            gradient_check(parameters, grads, X, Y, 0.000001, lambda_reg)
-            # for key in sorted(parameters.keys(), key=lambda x: x[::-1]):
-            #     print(key, parameters[key])
-        if print_cost and i % 1000 == 0:
+            if grad_check:
+                gradient_check(parameters, grads, X, Y, 0.000001, lambda_reg)
             costs.append(cost)
+
+        # Update parameters.
+        alpha = learning_rate / (1. + i * learning_rate_factor / num_iterations)
+        parameters = update_parameters(parameters, grads, alpha)
+
 
     # plot the cost
     # plt.plot(np.squeeze(costs))
@@ -337,11 +363,12 @@ def gradient_check(parameters, gradients, X, Y, epsilon=1e-7, lambda_reg=0):
 
     copied_parameters = copy.deepcopy(parameters)
 
-    g1, g2, keys = list(), list(), list()
+    g1, g2, approx_grads, keys = list(), list(), dict(), list()
     for key, param in copied_parameters.items():
         if key[0] in ('W', 'b'):
             assert 'd' + key in gradients.keys()
-            keys.append(key)
+            grad_tmp = list()
+
             for i in range(param.shape[0]):
                 for j in range(param.shape[1]):
 
@@ -356,6 +383,11 @@ def gradient_check(parameters, gradients, X, Y, epsilon=1e-7, lambda_reg=0):
 
                     g1.append(gradients['d' + key][i, j])
                     g2.append(estimated_dJ)
+                    grad_tmp.append(estimated_dJ)
+
+            keys.append(key)
+            approx_grads['d' + key] = np.reshape(grad_tmp, (param.shape[0], param.shape[1]))
+            #approx_grads['d' + key] = np.array(grad_tmp)
 
     g1 = np.array(g1)
     g2 = np.array(g2)
@@ -365,9 +397,20 @@ def gradient_check(parameters, gradients, X, Y, epsilon=1e-7, lambda_reg=0):
     denominator = np.linalg.norm(g1) + np.linalg.norm(g2)
     difference = numerator / denominator
 
-    if difference > 2e-7:
+    if difference > 2e-6:
         print(
             "\033[93m" + "There is a mistake in the backward propagation! difference = " + str(difference) + "\033[0m")
+        for key in approx_grads.keys():
+            numerator2 = np.linalg.norm(gradients[key] - approx_grads[key])
+            denominator2 = np.linalg.norm(gradients[key]) + np.linalg.norm(approx_grads[key])
+            difference2 = numerator2 / denominator2
+            print(key, '-->', difference2)
+            if difference2 > 2e-6:
+                print('--- computed_grad ---')
+                print(gradients[key])
+                print('--- approx grad ---')
+                print(approx_grads[key])
+
     else:
         print(
             "\033[92m" + "Your backward propagation works perfectly fine! difference = " + str(difference) + "\033[0m")
