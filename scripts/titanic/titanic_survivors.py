@@ -3,26 +3,52 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from deeplearning.helpers import L_layer_model, L_model_forward
+from deeplearning.helpers import L_layer_model, L_model_forward, normalize_input
 
 DATA_DIR = './data/'
+EXPORT_DIR = './exports/'
 PLOT = True
 
 
 def main():
     # analyze_data()
-    train, test, y_train = dummy_prepare_data()
-    X_train = train.values.T
-    X_test = test.values.T
-    Y_train = y_train.values.T.reshape(1, y_train.shape[0])
-    params, accuracy = dummy_train_model(X_train, Y_train)
+    X_train, X_test, Y_train, cache_test = basic_prepare_data()
+
+    assert X_train.shape[1] == Y_train.shape[1]  # sample size check
+    np.random.seed(1)
+    p = np.random.permutation(X_train.shape[1])  # we shuffle inputs
+    X_train = X_train.T[p].T
+    Y_train = Y_train.T[p].T
+
+    # let s split our training data into 2 sets
+    train_ratio = 0.8
+    train_size = int(X_train.shape[1] * train_ratio)
+    X_cross_val = X_train[:, train_size:]
+    X_train = X_train[:, :train_size]
+    Y_cross_val = Y_train[:, train_size:]
+    Y_train = Y_train[:, :train_size]
+
+    # train our model
+    params, accuracy = basic_train_model(X_train, Y_train)
+    print("train accuracy:", accuracy)
+
+    y_cross_val_hat, _ = L_model_forward(X_cross_val, params)
+    cross_val_predictions = y_cross_val_hat > 0.5
+    accuracy = np.sum(cross_val_predictions == Y_cross_val) / X_cross_val.shape[1]
+    print("cross val accuracy:", accuracy)
+
+    y_test_hat, _ = L_model_forward(X_test, params)
+    test_predictions = np.int8(y_test_hat > 0.5)
+
+    res = pd.DataFrame({'PassengerId': cache_test.values.reshape(-1, ), 'Survived': test_predictions.T.reshape(-1, )})
+    res.to_csv(EXPORT_DIR + "/submit.csv", index=False)
 
 
-def dummy_train_model(X_train, Y_train):
+def basic_train_model(X_train, Y_train):
 
     # hyperparameters choices
     nb_of_hidden_layouts = 2
-    nb_of_units_per_hidden_layouts = 8
+    nb_of_units_per_hidden_layouts = 10
 
     hidden_lay_dims = [nb_of_units_per_hidden_layouts] * nb_of_hidden_layouts
     layers_dims = (X_train.shape[0], *hidden_lay_dims, 1)
@@ -31,18 +57,18 @@ def dummy_train_model(X_train, Y_train):
     print('X_train shape', X_train.shape)
     print('Y_train shape', Y_train.shape)
 
-    opti_params = L_layer_model(X_train, Y_train, layers_dims, learning_rate=0.01, num_iterations=30000, lambda_reg=0.4,
+    # the below gives a 77% accuracy on test set submited on kaggle (~ok accuracy, a bit less than avg submit)
+    opti_params = L_layer_model(X_train, Y_train, layers_dims, learning_rate=0.5, num_iterations=8001, lambda_reg=0.2,
                                 print_cost=True)
 
     y_train_hat, cache = L_model_forward(X_train, opti_params)
     train_predictions = y_train_hat > 0.5
-    accuracy = np.sum(train_predictions == Y_train) / X_train.shape[0]
-    print("train accuracy:", accuracy)
+    accuracy = np.sum(train_predictions == Y_train) / X_train.shape[1]
 
     return opti_params, accuracy
 
 
-def dummy_fill_nan_values(df, display=True):
+def basic_fill_nan_values(df, display=True):
     nul_nb_per_column = df.isnull().sum()
     if display:
         print("count of NaN data per column")
@@ -61,7 +87,7 @@ def dummy_fill_nan_values(df, display=True):
     return df
 
 
-def dummy_prepare_data():
+def basic_prepare_data():
     train = pd.read_csv(DATA_DIR + "train.csv")
     test = pd.read_csv(DATA_DIR + "test.csv")
     # dataset = pd.concat(objs=[train, test], axis=0).reset_index(drop=True)
@@ -70,21 +96,28 @@ def dummy_prepare_data():
     train = train.fillna(np.nan)
     test = test.fillna(np.nan)
 
+    cache_test = test["PassengerId"]  # need it later on to export results
+
     combine = pd.concat([train.drop('Survived', 1), test])
     combine['cabin_known'] = combine['Cabin'].isnull() == False
     combine['is_female'] = combine['Sex'] == 'female'
 
     # remove all non-quantitative data
     combine = combine.drop(['PassengerId', 'Cabin', 'Embarked', 'Name', 'Ticket', 'Sex'], 1)
-    combine = dummy_fill_nan_values(combine, display=False)
+    combine = basic_fill_nan_values(combine, display=False)
 
     y_train = train['Survived']
-    test = combine.iloc[len(train):]
-    train = combine.iloc[:len(train)]
+    Y_train = y_train.values.T.reshape(1, y_train.shape[0])
+    standardized_combine, input_mean, input_var = normalize_input(combine.values.T)
+    X_train = standardized_combine[:, :len(train)]
+    X_test = standardized_combine[:, len(train):]
 
-    return train, test, y_train
+    return X_train, X_test, Y_train, cache_test
 
 
+""" data analysis
+some lines are commented but can be interesting to uncomment to see more graphs
+This analysis is not directly used in data treatment, but ome decisions have been made considering it"""
 def analyze_data():
     train = pd.read_csv(DATA_DIR + "train.csv")
     test = pd.read_csv(DATA_DIR + "test.csv")
@@ -195,8 +228,6 @@ def analyze_data():
     g = g.set_ylabels("Count")
     if PLOT: plt.show()
 
-
-    #train_and_test = pd.concat([train.drop('Survived', 1), test])
 
 if __name__ == '__main__':
     main()
